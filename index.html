@@ -6,36 +6,39 @@
   <title>Driving Score Web App</title>
   <style>
     body { font-family: sans-serif; text-align: center; margin: 20px; }
-    video, canvas { width: 90%; max-width: 400px; margin-top: 10px; border: 2px solid #333; }
-    #scoreBox, #speedBox, #historyBox { font-size: 1.5em; margin: 10px; }
+    video, canvas { width: 90%; max-width: 600px; margin-top: 10px; border: 2px solid #333; }
+    #scoreBox, #speedBox { font-size: 1.5em; margin: 10px; }
     button { padding: 10px 20px; margin: 5px; font-size: 1em; }
     .history { margin-top: 20px; text-align: left; }
-    #scoreChart { margin-top: 20px; height: 300px; }
   </style>
 </head>
 <body>
   <h1>Driving Score Web App</h1>
   <div id="scoreBox">Score: <span id="score">100</span></div>
   <div id="speedBox">Speed: <span id="speed">0</span> km/h</div>
-  <button onclick="saveToLocal()">Save to Browser</button>
-  <button onclick="uploadGist()">Upload to Gist</button>
-  <div id="historyBox"></div>
+  <button onclick="saveToLocal()">Save Session</button>
+  <button onclick="viewHistory()">View Session History</button>
   <video id="video" autoplay playsinline></video>
   <canvas id="canvas"></canvas>
-  <div id="scoreChart"></div>
 
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
   <script>
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
     const scoreDisplay = document.getElementById('score');
     const speedDisplay = document.getElementById('speed');
-    const historyBox = document.getElementById('historyBox');
-    const scoreChartElem = document.getElementById('scoreChart');
     let score = 100;
     let lastGeo = null;
     let sessionHistory = JSON.parse(localStorage.getItem('sessionHistory')) || [];
+
+    // Load the Coco-SSD model for road sign detection
+    let model;
+    cocoSsd.load().then((loadedModel) => {
+      model = loadedModel;
+      console.log('Model loaded');
+    });
 
     // Start camera
     navigator.mediaDevices.getUserMedia({ video: true }).then(stream => {
@@ -62,7 +65,6 @@
         score -= 1;
         if (score < 0) score = 0;
         scoreDisplay.textContent = score;
-        speak("You're veering off the lane!");
       }
       requestAnimationFrame(detectLane);
     }
@@ -74,11 +76,11 @@
     // Motion sensor (Turning/Braking)
     window.addEventListener("devicemotion", e => {
       const acc = e.accelerationIncludingGravity;
+      // Detect hard turning or sudden braking
       if (Math.abs(acc.x) > 5 || acc.y < -10) {
         score -= 2;
         if (score < 0) score = 0;
         scoreDisplay.textContent = score;
-        speak("Sharp turning or braking detected!");
       }
     });
 
@@ -88,12 +90,36 @@
         const dx = pos.coords.latitude - lastGeo.latitude;
         const dy = pos.coords.longitude - lastGeo.longitude;
         const dt = (pos.timestamp - lastGeo.timestamp) / 1000;
-        const dist = Math.sqrt(dx * dx + dy * dy) * 111000;
-        const speed = dist / dt;
-        speedDisplay.textContent = (speed * 3.6).toFixed(1);
+        const dist = Math.sqrt(dx * dx + dy * dy) * 111000; // convert to meters
+        const speed = dist / dt; // meters per second
+        speedDisplay.textContent = (speed * 3.6).toFixed(1); // convert to km/h
       }
       lastGeo = pos.coords;
     });
+
+    // Road Sign Detection
+    function detectSigns() {
+      if (model) {
+        model.detect(video).then(predictions => {
+          predictions.forEach(prediction => {
+            // Detect specific road signs (e.g., stop signs)
+            if (prediction.class === 'stop sign') {
+              score -= 10;
+              if (score < 0) score = 0;
+              scoreDisplay.textContent = score;
+            } else if (prediction.class === 'traffic light') {
+              // Handle traffic lights (if needed)
+            } else if (prediction.class === 'speed limit') {
+              // Handle speed limit signs (if needed)
+            }
+          });
+        });
+      }
+      requestAnimationFrame(detectSigns);
+    }
+
+    // Start road sign detection
+    detectSigns();
 
     // Save session history to localStorage
     function saveToLocal() {
@@ -104,76 +130,17 @@
       };
       sessionHistory.push(session);
       localStorage.setItem('sessionHistory', JSON.stringify(sessionHistory));
-      renderHistory();
-      speak(`Session saved! Your score: ${score}`);
+      alert("Session saved!");
     }
 
-    // Upload to GitHub Gist
-    async function uploadGist() {
-      const token = prompt("Enter GitHub token (with gist access):");
-      if (!token) return;
-      const body = {
-        description: "Driving Score",
-        public: false,
-        files: {
-          "score.txt": {
-            content: `Score: ${score}\nSpeed: ${speedDisplay.textContent} km/h\nTime: ${new Date().toISOString()}`
-          }
-        }
-      };
-
-      const res = await fetch("https://api.github.com/gists", {
-        method: "POST",
-        headers: {
-          "Authorization": "Bearer " + token,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(body)
+    // View session history
+    function viewHistory() {
+      let historyText = "Session History:\n\n";
+      sessionHistory.forEach((session, index) => {
+        historyText += `Session ${index + 1}:\nScore: ${session.score}\nSpeed: ${session.speed}\nDate: ${session.date}\n\n`;
       });
-
-      const json = await res.json();
-      if (json.html_url) {
-        alert("Uploaded: " + json.html_url);
-      } else {
-        alert("Upload failed.");
-      }
+      alert(historyText);
     }
-
-    // Speak feedback using Web Speech API
-    function speak(text) {
-      const utterance = new SpeechSynthesisUtterance(text);
-      window.speechSynthesis.speak(utterance);
-    }
-
-    // Render history on page
-    function renderHistory() {
-      historyBox.innerHTML = '<h3>History</h3>';
-      sessionHistory.forEach(session => {
-        historyBox.innerHTML += `<div>Score: ${session.score}, Speed: ${session.speed} km/h, Time: ${session.date}</div>`;
-      });
-      updateScoreChart();
-    }
-
-    // Update Score Chart
-    function updateScoreChart() {
-      const scores = sessionHistory.map(s => s.score);
-      const dates = sessionHistory.map(s => new Date(s.date).toLocaleString());
-      const ctx = scoreChartElem.getContext('2d');
-      new Chart(ctx, {
-        type: 'line',
-        data: {
-          labels: dates,
-          datasets: [{
-            label: 'Driving Score',
-            data: scores,
-            borderColor: 'rgba(75, 192, 192, 1)',
-            fill: false,
-          }]
-        }
-      });
-    }
-
-    renderHistory(); // Initially render history
   </script>
 </body>
 </html>
