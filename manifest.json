@@ -1,11 +1,12 @@
 {
-  "name": "Driving Score",
+  "name": "Driving Score App",
   "short_name": "DriveScore",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#111827",
   "theme_color": "#2563eb",
-  "description": "Drive smarter with real-time scoring and detection.",
+  "orientation": "portrait",
+  "description": "Drive smarter with live score, camera detection, and offline access.",
   "icons": [
     {
       "src": "icon-192.png",
