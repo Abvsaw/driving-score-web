@@ -1,46 +1,54 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Driving Score Web App</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body { font-family: sans-serif; text-align: center; margin: 10px; }
-    video, canvas { width: 90%; max-width: 400px; margin: 10px 0; border: 2px solid black; }
-    #scoreBox, #speedBox { font-size: 1.5em; margin: 10px; }
+    body { font-family: sans-serif; text-align: center; margin: 20px; }
+    video, canvas { width: 90%; max-width: 400px; margin-top: 10px; border: 2px solid #333; }
+    #scoreBox, #speedBox, #historyBox { font-size: 1.5em; margin: 10px; }
     button { padding: 10px 20px; margin: 5px; font-size: 1em; }
+    .history { margin-top: 20px; text-align: left; }
+    #scoreChart { margin-top: 20px; height: 300px; }
   </style>
 </head>
 <body>
   <h1>Driving Score Web App</h1>
   <div id="scoreBox">Score: <span id="score">100</span></div>
   <div id="speedBox">Speed: <span id="speed">0</span> km/h</div>
-  <video id="video" autoplay playsinline></video>
-  <canvas id="canvas"></canvas><br />
   <button onclick="saveToLocal()">Save to Browser</button>
   <button onclick="uploadGist()">Upload to Gist</button>
+  <div id="historyBox"></div>
+  <video id="video" autoplay playsinline></video>
+  <canvas id="canvas"></canvas>
+  <div id="scoreChart"></div>
 
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script>
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
     const scoreDisplay = document.getElementById('score');
     const speedDisplay = document.getElementById('speed');
+    const historyBox = document.getElementById('historyBox');
+    const scoreChartElem = document.getElementById('scoreChart');
     let score = 100;
     let lastGeo = null;
+    let sessionHistory = JSON.parse(localStorage.getItem('sessionHistory')) || [];
 
     // Start camera
     navigator.mediaDevices.getUserMedia({ video: true }).then(stream => {
       video.srcObject = stream;
     });
 
-    // Lane Detection (simple edge-based)
+    // Lane Detection (simplified)
     function detectLane() {
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       const frame = ctx.getImageData(0, canvas.height - 50, canvas.width, 50);
       let left = 0, right = 0;
-
       for (let x = 0; x < canvas.width; x++) {
         const index = (x + 25 * canvas.width) * 4;
         const brightness = (frame.data[index] + frame.data[index + 1] + frame.data[index + 2]) / 3;
@@ -49,14 +57,13 @@
           else right++;
         }
       }
-
       const diff = Math.abs(left - right);
       if (diff > 100) {
         score -= 1;
         if (score < 0) score = 0;
         scoreDisplay.textContent = score;
+        speak("You're veering off the lane!");
       }
-
       requestAnimationFrame(detectLane);
     }
 
@@ -64,17 +71,18 @@
       detectLane();
     };
 
-    // Motion sensor
+    // Motion sensor (Turning/Braking)
     window.addEventListener("devicemotion", e => {
       const acc = e.accelerationIncludingGravity;
       if (Math.abs(acc.x) > 5 || acc.y < -10) {
         score -= 2;
         if (score < 0) score = 0;
         scoreDisplay.textContent = score;
+        speak("Sharp turning or braking detected!");
       }
     });
 
-    // GPS speed
+    // GPS Speed detection
     navigator.geolocation.watchPosition(pos => {
       if (lastGeo) {
         const dx = pos.coords.latitude - lastGeo.latitude;
@@ -87,11 +95,20 @@
       lastGeo = pos.coords;
     });
 
+    // Save session history to localStorage
     function saveToLocal() {
-      localStorage.setItem('drivingScore', score);
-      alert("Score saved locally!");
+      const session = {
+        score,
+        speed: speedDisplay.textContent,
+        date: new Date().toISOString(),
+      };
+      sessionHistory.push(session);
+      localStorage.setItem('sessionHistory', JSON.stringify(sessionHistory));
+      renderHistory();
+      speak(`Session saved! Your score: ${score}`);
     }
 
+    // Upload to GitHub Gist
     async function uploadGist() {
       const token = prompt("Enter GitHub token (with gist access):");
       if (!token) return;
@@ -121,6 +138,42 @@
         alert("Upload failed.");
       }
     }
+
+    // Speak feedback using Web Speech API
+    function speak(text) {
+      const utterance = new SpeechSynthesisUtterance(text);
+      window.speechSynthesis.speak(utterance);
+    }
+
+    // Render history on page
+    function renderHistory() {
+      historyBox.innerHTML = '<h3>History</h3>';
+      sessionHistory.forEach(session => {
+        historyBox.innerHTML += `<div>Score: ${session.score}, Speed: ${session.speed} km/h, Time: ${session.date}</div>`;
+      });
+      updateScoreChart();
+    }
+
+    // Update Score Chart
+    function updateScoreChart() {
+      const scores = sessionHistory.map(s => s.score);
+      const dates = sessionHistory.map(s => new Date(s.date).toLocaleString());
+      const ctx = scoreChartElem.getContext('2d');
+      new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: dates,
+          datasets: [{
+            label: 'Driving Score',
+            data: scores,
+            borderColor: 'rgba(75, 192, 192, 1)',
+            fill: false,
+          }]
+        }
+      });
+    }
+
+    renderHistory(); // Initially render history
   </script>
 </body>
 </html>
