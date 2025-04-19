@@ -44,6 +44,7 @@
       background: var(--card);
       border-radius: var(--radius);
       box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+      display: none; /* Hidden by default */
     }
     .stat {
       display: flex; justify-content: space-between;
@@ -100,7 +101,7 @@
     <button onclick="enableSensors()">Enable Sensors</button>
   </div>
 
-  <div class="dashboard" style="display: none;" id="dashboard">
+  <div class="dashboard" id="dashboard">
     <div class="stat"><i class="fas fa-star"></i> Score: <span id="score">100</span></div>
     <div class="stat"><i class="fas fa-gauge-high"></i> Speed: <span id="speed">0</span> km/h</div>
 
@@ -170,10 +171,19 @@
     const ctx = canvas.getContext("2d");
 
     function enableSensors() {
+      console.log("Button clicked, enabling sensors..."); // Debugging line
+      // Hide the intro and show the dashboard
       document.querySelector(".intro").style.display = "none";
       document.getElementById("dashboard").style.display = "block";
+      
+      // Request camera and motion access
       navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
-        .then(stream => { video.srcObject = stream; });
+        .then(stream => {
+          video.srcObject = stream;
+        })
+        .catch(err => {
+          alert("Error accessing camera: " + err.message);
+        });
 
       detectSigns();
     }
