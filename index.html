@@ -5,61 +5,105 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <meta name="theme-color" content="#111827"/>
   <link rel="manifest" href="manifest.json" />
-  <title>Driving Score Web App</title>
+  <title>Driving Score</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
   <style>
+    :root {
+      color-scheme: light dark;
+      --bg: white;
+      --fg: #111;
+      --card: #f9f9f9;
+      --primary: #2563eb;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #111827;
+        --fg: #f9fafb;
+        --card: #1f2937;
+        --primary: #3b82f6;
+      }
+    }
+
     body {
       margin: 0;
       font-family: 'Segoe UI', sans-serif;
-      background: #f3f4f6;
-      color: #111;
+      background: var(--bg);
+      color: var(--fg);
       display: flex;
       flex-direction: column;
       align-items: center;
+      min-height: 100vh;
     }
+
     header {
-      background: #111827;
+      background: var(--primary);
       color: white;
-      padding: 1em 0;
       width: 100%;
       text-align: center;
+      padding: 1em 0;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
     }
+
     .dashboard {
       margin: 1em auto;
       padding: 1em;
-      background: white;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+      background: var(--card);
       border-radius: 10px;
       width: 90%;
       max-width: 600px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
     }
+
     .dashboard h2 {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 1.1em;
       margin: 0.5em 0;
-      font-size: 1.2em;
     }
+
+    .dashboard h2 i {
+      color: var(--primary);
+    }
+
     video, canvas {
       width: 100%;
       border-radius: 10px;
       margin-top: 1em;
     }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 1em;
+      justify-content: center;
+    }
+
     button {
-      padding: 10px 20px;
-      margin: 10px 5px;
-      background: #2563eb;
+      flex: 1;
+      padding: 10px;
+      background: var(--primary);
       color: white;
       border: none;
-      border-radius: 5px;
-      font-size: 1em;
+      border-radius: 6px;
+      font-size: 0.95em;
       cursor: pointer;
     }
+
     button:hover {
       background: #1e40af;
     }
+
     label {
       display: flex;
       align-items: center;
       gap: 10px;
+      font-size: 0.95em;
       margin-top: 10px;
     }
+
     input[type="checkbox"] {
       transform: scale(1.4);
     }
@@ -67,166 +111,92 @@
 </head>
 <body>
   <header>
-    <h1>Driving Score Web App</h1>
+    <h1><i class="fas fa-car"></i> Driving Score</h1>
   </header>
 
   <div class="dashboard">
-    <h2>Score: <span id="score">100</span></h2>
-    <h2>Speed: <span id="speed">0</span> km/h</h2>
+    <h2><i class="fas fa-star"></i> Score: <span id="score">100</span></h2>
+    <h2><i class="fas fa-gauge-high"></i> Speed: <span id="speed">0</span> km/h</h2>
 
     <label>
-      <input type="checkbox" id="testModeToggle" onchange="toggleTestMode()"> Test Mode (Silent)
+      <input type="checkbox" id="testModeToggle" onchange="toggleTestMode()"> <i class="fas fa-vial"></i> Test Mode (silent)
     </label>
 
-    <div>
-      <button onclick="saveToLocal()">Save</button>
-      <button onclick="viewHistory()">History</button>
-      <button onclick="downloadHistory()">Export</button>
+    <div class="controls">
+      <button onclick="saveToLocal()"><i class="fas fa-save"></i> Save</button>
+      <button onclick="viewHistory()"><i class="fas fa-clock-rotate-left"></i> History</button>
+      <button onclick="downloadHistory()"><i class="fas fa-download"></i> Export</button>
     </div>
 
     <video id="video" autoplay playsinline muted></video>
     <canvas id="canvas"></canvas>
   </div>
 
-  <!-- PWA Service Worker -->
   <script>
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js').then(reg => {
-        console.log("SW registered", reg);
-      });
-    }
-  </script>
-
-  <!-- TensorFlow and CocoSSD -->
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
-
-  <script>
-    const video = document.getElementById('video');
-    const canvas = document.getElementById('canvas');
-    const ctx = canvas.getContext('2d');
-    const scoreEl = document.getElementById('score');
-    const speedEl = document.getElementById('speed');
     let testMode = false;
     let score = 100;
-    let model;
-    let lastGeo = null;
-    let history = JSON.parse(localStorage.getItem('drivingHistory')) || [];
 
     function toggleTestMode() {
-      testMode = document.getElementById('testModeToggle').checked;
+      testMode = document.getElementById("testModeToggle").checked;
     }
 
-    async function startCamera() {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { exact: "environment" } }
-        });
-        video.srcObject = stream;
-      } catch (err) {
-        const fallbackStream = await navigator.mediaDevices.getUserMedia({ video: true });
-        video.srcObject = fallbackStream;
+    function updateScore(change) {
+      score = Math.max(0, score + change);
+      document.getElementById("score").innerText = score;
+      if (!testMode) {
+        const msg = new SpeechSynthesisUtterance("Score: " + score);
+        speechSynthesis.speak(msg);
       }
     }
-
-    cocoSsd.load().then(m => {
-      model = m;
-    });
-
-    function detectSigns() {
-      if (!model) return;
-      model.detect(video).then(predictions => {
-        predictions.forEach(p => {
-          if (["stop sign", "traffic light"].includes(p.class)) {
-            score -= 5;
-            if (score < 0) score = 0;
-            scoreEl.textContent = score;
-            if (!testMode) console.log("Detected:", p.class);
-          }
-        });
-      });
-      requestAnimationFrame(detectSigns);
-    }
-
-    function detectLanes() {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const frame = ctx.getImageData(0, canvas.height - 50, canvas.width, 50);
-      let left = 0, right = 0;
-      for (let x = 0; x < canvas.width; x++) {
-        const i = (x + 25 * canvas.width) * 4;
-        const brightness = (frame.data[i] + frame.data[i+1] + frame.data[i+2]) / 3;
-        if (brightness > 200) {
-          if (x < canvas.width / 2) left++;
-          else right++;
-        }
-      }
-      if (Math.abs(left - right) > 100) {
-        score -= 1;
-        if (score < 0) score = 0;
-        scoreEl.textContent = score;
-      }
-      requestAnimationFrame(detectLanes);
-    }
-
-    navigator.geolocation.watchPosition(pos => {
-      if (lastGeo) {
-        const dx = pos.coords.latitude - lastGeo.latitude;
-        const dy = pos.coords.longitude - lastGeo.longitude;
-        const dt = (pos.timestamp - lastGeo.timestamp) / 1000;
-        const dist = Math.sqrt(dx * dx + dy * dy) * 111000;
-        const speed = dist / dt;
-        speedEl.textContent = (speed * 3.6).toFixed(1);
-      }
-      lastGeo = pos.coords;
-    });
-
-    window.addEventListener("devicemotion", e => {
-      const a = e.accelerationIncludingGravity;
-      if (Math.abs(a.x) > 5 || a.y < -10) {
-        score -= 2;
-        if (score < 0) score = 0;
-        scoreEl.textContent = score;
-      }
-    });
 
     function saveToLocal() {
-      history.push({
-        score,
-        speed: speedEl.textContent,
-        time: new Date().toLocaleString(),
-        testMode
-      });
-      localStorage.setItem('drivingHistory', JSON.stringify(history));
-      alert("Session saved.");
+      const history = JSON.parse(localStorage.getItem("driveHistory") || "[]");
+      history.push({ time: new Date().toISOString(), score });
+      localStorage.setItem("driveHistory", JSON.stringify(history));
+      alert("Saved!");
     }
 
     function viewHistory() {
-      if (!history.length) return alert("No history yet.");
-      let log = "Previous Sessions:\n";
-      history.forEach((h, i) => {
-        log += `#${i+1} - ${h.time} | Score: ${h.score}, Speed: ${h.speed} km/h | ${h.testMode ? "Test Mode" : "Live Mode"}\n`;
-      });
-      alert(log);
+      const history = JSON.parse(localStorage.getItem("driveHistory") || "[]");
+      alert("History:\n" + history.map(h => `${h.time}: ${h.score}`).join("\n"));
     }
 
     function downloadHistory() {
-      const csv = history.map(h => `${h.time},${h.score},${h.speed},${h.testMode ? "Test" : "Live"}`).join("\n");
-      const blob = new Blob(["Time,Score,Speed,Mode\n" + csv], { type: "text/csv" });
+      const history = localStorage.getItem("driveHistory") || "[]";
+      const blob = new Blob([history], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "driving_history.csv";
+      a.download = "driving_score_history.json";
       a.click();
     }
 
-    video.onloadedmetadata = () => {
-      detectLanes();
-      detectSigns();
-    };
+    // GPS Speed
+    navigator.geolocation.watchPosition(pos => {
+      const speed = pos.coords.speed || 0;
+      const kmh = Math.round(speed * 3.6);
+      document.getElementById("speed").innerText = kmh;
+      if (kmh > 120) updateScore(-5);
+    });
 
-    startCamera();
+    // Camera setup
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+      .then(stream => {
+        video.srcObject = stream;
+      });
+
+    // Simulate lane detection or signs
+    setInterval(() => {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0);
+      // Simulate detection
+      if (Math.random() > 0.97) updateScore(-2);
+    }, 1000);
   </script>
 </body>
 </html>
