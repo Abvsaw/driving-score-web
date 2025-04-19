@@ -3,19 +3,21 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <meta name="theme-color" content="#111827"/>
-  <link rel="manifest" href="manifest.json" />
   <title>Driving Score</title>
+  <meta name="theme-color" content="#111827"/>
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon-192.png">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.15.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
   <style>
     :root {
-      color-scheme: light dark;
-      --bg: white;
+      --bg: #fff;
       --fg: #111;
-      --card: #f9f9f9;
+      --card: #f0f0f0;
       --primary: #2563eb;
+      --radius: 12px;
     }
-
     @media (prefers-color-scheme: dark) {
       :root {
         --bg: #111827;
@@ -24,102 +26,63 @@
         --primary: #3b82f6;
       }
     }
-
+    * { box-sizing: border-box; }
     body {
-      margin: 0;
-      font-family: 'Segoe UI', sans-serif;
-      background: var(--bg);
-      color: var(--fg);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      min-height: 100vh;
+      margin: 0; font-family: sans-serif;
+      background: var(--bg); color: var(--fg);
+      display: flex; flex-direction: column; align-items: center;
     }
-
     header {
-      background: var(--primary);
-      color: white;
-      width: 100%;
-      text-align: center;
-      padding: 1em 0;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      background: var(--primary); color: white;
+      width: 100%; padding: 1rem 0; text-align: center;
+      font-size: 1.5rem; font-weight: bold;
     }
-
     .dashboard {
-      margin: 1em auto;
-      padding: 1em;
+      width: 100%; max-width: 600px;
+      padding: 1rem; margin: 1rem;
       background: var(--card);
-      border-radius: 10px;
-      width: 90%;
-      max-width: 600px;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+      border-radius: var(--radius);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.1);
     }
-
-    .dashboard h2 {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-size: 1.1em;
-      margin: 0.5em 0;
+    .stat {
+      display: flex; justify-content: space-between;
+      font-size: 1.1rem; margin: 0.5rem 0;
     }
-
-    .dashboard h2 i {
-      color: var(--primary);
-    }
-
-    video, canvas {
-      width: 100%;
-      border-radius: 10px;
-      margin-top: 1em;
-    }
-
-    .controls {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      margin-top: 1em;
-      justify-content: center;
-    }
-
-    button {
-      flex: 1;
-      padding: 10px;
-      background: var(--primary);
-      color: white;
-      border: none;
-      border-radius: 6px;
-      font-size: 0.95em;
-      cursor: pointer;
-    }
-
-    button:hover {
-      background: #1e40af;
-    }
-
     label {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-size: 0.95em;
-      margin-top: 10px;
+      display: flex; align-items: center;
+      gap: 0.5rem; margin: 1rem 0 0.5rem;
     }
-
     input[type="checkbox"] {
-      transform: scale(1.4);
+      transform: scale(1.3);
+      accent-color: var(--primary);
+    }
+    .controls {
+      display: flex; gap: 0.75rem; flex-wrap: wrap;
+      margin-top: 1rem;
+    }
+    .controls button {
+      flex: 1; padding: 0.75rem;
+      background: var(--primary); color: white;
+      border: none; border-radius: var(--radius);
+      font-size: 1rem; cursor: pointer;
+    }
+    video, canvas {
+      width: 100%; border-radius: var(--radius);
+      margin-top: 1rem; max-height: 50vh;
+      object-fit: cover;
     }
   </style>
 </head>
 <body>
-  <header>
-    <h1><i class="fas fa-car"></i> Driving Score</h1>
-  </header>
+  <header><i class="fas fa-car"></i> Driving Score</header>
 
   <div class="dashboard">
-    <h2><i class="fas fa-star"></i> Score: <span id="score">100</span></h2>
-    <h2><i class="fas fa-gauge-high"></i> Speed: <span id="speed">0</span> km/h</h2>
+    <div class="stat"><i class="fas fa-star"></i> Score: <span id="score">100</span></div>
+    <div class="stat"><i class="fas fa-gauge-high"></i> Speed: <span id="speed">0</span> km/h</div>
 
     <label>
-      <input type="checkbox" id="testModeToggle" onchange="toggleTestMode()"> <i class="fas fa-vial"></i> Test Mode (silent)
+      <input type="checkbox" id="testModeToggle" onchange="toggleTestMode()">
+      <i class="fas fa-vial"></i> Test Mode (Silent)
     </label>
 
     <div class="controls">
@@ -133,8 +96,9 @@
   </div>
 
   <script>
-    let testMode = false;
     let score = 100;
+    let testMode = false;
+    let model = null;
 
     function toggleTestMode() {
       testMode = document.getElementById("testModeToggle").checked;
@@ -164,39 +128,59 @@
     function downloadHistory() {
       const history = localStorage.getItem("driveHistory") || "[]";
       const blob = new Blob([history], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url;
+      a.href = URL.createObjectURL(blob);
       a.download = "driving_score_history.json";
       a.click();
     }
 
-    // GPS Speed
     navigator.geolocation.watchPosition(pos => {
       const speed = pos.coords.speed || 0;
       const kmh = Math.round(speed * 3.6);
       document.getElementById("speed").innerText = kmh;
-      if (kmh > 120) updateScore(-5);
+      if (kmh > 130) updateScore(-5);
     });
 
-    // Camera setup
     const video = document.getElementById("video");
     const canvas = document.getElementById("canvas");
     const ctx = canvas.getContext("2d");
 
     navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
-      .then(stream => {
-        video.srcObject = stream;
-      });
+      .then(stream => { video.srcObject = stream; });
 
-    // Simulate lane detection or signs
-    setInterval(() => {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      ctx.drawImage(video, 0, 0);
-      // Simulate detection
-      if (Math.random() > 0.97) updateScore(-2);
-    }, 1000);
+    async function detectSigns() {
+      model = await cocoSsd.load();
+      setInterval(() => {
+        if (video.readyState === 4) {
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          ctx.drawImage(video, 0, 0);
+
+          model.detect(video).then(predictions => {
+            predictions.forEach(pred => {
+              const [x, y, width, height] = pred.bbox;
+              ctx.strokeStyle = "#00ff00";
+              ctx.lineWidth = 2;
+              ctx.strokeRect(x, y, width, height);
+              ctx.fillStyle = "#00ff00";
+              ctx.fillText(pred.class, x, y > 10 ? y - 5 : y + 10);
+
+              // Penalize if road sign (simplified)
+              if (pred.class.includes("stop") || pred.class.includes("sign")) {
+                updateScore(-3);
+              }
+            });
+          });
+        }
+      }, 1500);
+    }
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./service-worker.js')
+        .then(() => console.log("SW ready"));
+    }
+
+    detectSigns();
   </script>
 </body>
 </html>
