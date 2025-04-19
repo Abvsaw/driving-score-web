@@ -1,9 +1,21 @@
 {
-  "name": "Driving Score Web App",
-  "short_name": "DrivingScore",
-  "start_url": ".",
+  "name": "Driving Score",
+  "short_name": "DriveScore",
+  "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#111827",
-  "theme_color": "#111827",
-  "icons": []
+  "theme_color": "#2563eb",
+  "description": "Drive smarter with real-time scoring and detection.",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
 }
