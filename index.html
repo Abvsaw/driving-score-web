@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Driving Score Web App</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: sans-serif; text-align: center; margin: 10px; }
+    video, canvas { width: 90%; max-width: 400px; margin: 10px 0; border: 2px solid black; }
+    #scoreBox, #speedBox { font-size: 1.5em; margin: 10px; }
+    button { padding: 10px 20px; margin: 5px; font-size: 1em; }
+  </style>
+</head>
+<body>
+  <h1>Driving Score Web App</h1>
+  <div id="scoreBox">Score: <span id="score">100</span></div>
+  <div id="speedBox">Speed: <span id="speed">0</span> km/h</div>
+  <video id="video" autoplay playsinline></video>
+  <canvas id="canvas"></canvas><br />
+  <button onclick="saveToLocal()">Save to Browser</button>
+  <button onclick="uploadGist()">Upload to Gist</button>
+
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const scoreDisplay = document.getElementById('score');
+    const speedDisplay = document.getElementById('speed');
+    let score = 100;
+    let lastGeo = null;
+
+    // Start camera
+    navigator.mediaDevices.getUserMedia({ video: true }).then(stream => {
+      video.srcObject = stream;
+    });
+
+    // Lane Detection (simple edge-based)
+    function detectLane() {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const frame = ctx.getImageData(0, canvas.height - 50, canvas.width, 50);
+      let left = 0, right = 0;
+
+      for (let x = 0; x < canvas.width; x++) {
+        const index = (x + 25 * canvas.width) * 4;
+        const brightness = (frame.data[index] + frame.data[index + 1] + frame.data[index + 2]) / 3;
+        if (brightness > 200) {
+          if (x < canvas.width / 2) left++;
+          else right++;
+        }
+      }
+
+      const diff = Math.abs(left - right);
+      if (diff > 100) {
+        score -= 1;
+        if (score < 0) score = 0;
+        scoreDisplay.textContent = score;
+      }
+
+      requestAnimationFrame(detectLane);
+    }
+
+    video.onloadedmetadata = () => {
+      detectLane();
+    };
+
+    // Motion sensor
+    window.addEventListener("devicemotion", e => {
+      const acc = e.accelerationIncludingGravity;
+      if (Math.abs(acc.x) > 5 || acc.y < -10) {
+        score -= 2;
+        if (score < 0) score = 0;
+        scoreDisplay.textContent = score;
+      }
+    });
+
+    // GPS speed
+    navigator.geolocation.watchPosition(pos => {
+      if (lastGeo) {
+        const dx = pos.coords.latitude - lastGeo.latitude;
+        const dy = pos.coords.longitude - lastGeo.longitude;
+        const dt = (pos.timestamp - lastGeo.timestamp) / 1000;
+        const dist = Math.sqrt(dx * dx + dy * dy) * 111000;
+        const speed = dist / dt;
+        speedDisplay.textContent = (speed * 3.6).toFixed(1);
+      }
+      lastGeo = pos.coords;
+    });
+
+    function saveToLocal() {
+      localStorage.setItem('drivingScore', score);
+      alert("Score saved locally!");
+    }
+
+    async function uploadGist() {
+      const token = prompt("Enter GitHub token (with gist access):");
+      if (!token) return;
+      const body = {
+        description: "Driving Score",
+        public: false,
+        files: {
+          "score.txt": {
+            content: `Score: ${score}\nSpeed: ${speedDisplay.textContent} km/h\nTime: ${new Date().toISOString()}`
+          }
+        }
+      };
+
+      const res = await fetch("https://api.github.com/gists", {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer " + token,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(body)
+      });
+
+      const json = await res.json();
+      if (json.html_url) {
+        alert("Uploaded: " + json.html_url);
+      } else {
+        alert("Upload failed.");
+      }
+    }
+  </script>
+</body>
+</html>
